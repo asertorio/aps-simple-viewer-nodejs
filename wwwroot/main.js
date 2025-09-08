@@ -1,10 +1,22 @@
 import { initViewer, loadModel } from './viewer.js';
 
-initViewer(document.getElementById('preview')).then(viewer => {
-    const urn = window.location.hash?.substring(1);
-    setupModelSelection(viewer, urn);
-    setupModelUpload(viewer);
-});
+let viewerPromise;
+try {
+    viewerPromise = initViewer(document.getElementById('preview'));
+    viewerPromise.then(viewer => {
+        const urn = window.location.hash?.substring(1);
+        setupModelSelection(viewer, urn);
+    }, err => {
+        console.error(err);
+        showNotification('Could not initialize viewer. Models cannot be previewed.');
+    });
+} catch (err) {
+    console.error(err);
+    showNotification('Could not initialize viewer. Models cannot be previewed.');
+    viewerPromise = Promise.reject(err);
+    viewerPromise.catch(() => {}); // Avoid unhandled rejection
+}
+setupModelUpload(viewerPromise);
 
 async function setupModelSelection(viewer, selectedUrn) {
     const dropdown = document.getElementById('models');
@@ -26,7 +38,7 @@ async function setupModelSelection(viewer, selectedUrn) {
     }
 }
 
-async function setupModelUpload(viewer) {
+async function setupModelUpload(viewerPromise) {
     const upload = document.getElementById('upload');
     const input = document.getElementById('input');
     const models = document.getElementById('models');
@@ -48,7 +60,17 @@ async function setupModelUpload(viewer) {
                 throw new Error(await resp.text());
             }
             const model = await resp.json();
-            setupModelSelection(viewer, model.urn);
+            if (viewerPromise) {
+                try {
+                    const viewer = await viewerPromise;
+                    setupModelSelection(viewer, model.urn);
+                } catch (err) {
+                    console.error(err);
+                    showNotification('Model uploaded but viewer is unavailable.');
+                }
+            } else {
+                showNotification('Model uploaded but viewer is unavailable.');
+            }
         } catch (err) {
             alert(`Could not upload model ${file.name}. See the console for more details.`);
             console.error(err);
